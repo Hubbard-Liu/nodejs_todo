@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<title>Todo List</title>
+		<link rel="stylesheet" href="./assets/css/base.css">
+		<link rel="stylesheet" href="./assets/css/index.css">
+		<link rel="stylesheet" href="./assets/css/nprogress.css">
+		<script src="./js/jquery-3.5.1.js"></script>
+		<script src="./js/template-web.js"></script>
+		<script src="./js/nprogress.js"></script>
+	</head>
+	<body>
+		<section class="todoapp">
+			<header class="header">
+				<h1>todos</h1>
+				<input class="new-todo" placeholder="请输入任务" autofocus id="todoAdd">
+			</header>
+			<!-- This section should be hidden by default and shown when there are todos -->
+			<section class="main">
+				<input class="toggle-all" type="checkbox">
+				<label for="toggle-all">Mark all as complete</label>
+				<ul class="todo-list" id="todo-list">
+					<!-- These are here just to show the structure of the list items -->
+					<!-- List items should get the class `editing` when editing and `completed` when marked as completed -->
+					<!-- <li class="completed">
+						<div class="view">
+							<input class="toggle" type="checkbox" checked>
+							<label>Taste JavaScript</label>
+							<button class="destroy"></button>
+						</div>
+						<input class="edit" value="Create a TodoMVC template">
+					</li> -->
+					
+				</ul>
+			</section>
+			<!-- This footer should hidden by default and shown when there are todos -->
+			<footer class="footer">
+				<!-- This should be `0 items left` by default -->
+				<span class="todo-count"><strong id="count">0</strong> 任务 </span>
+				<!-- Remove this if you don't implement routing -->
+				<ul class="filters">
+					<li>
+						<a class="selected" href="javascript:;" id="all">All</a>
+					</li>
+					<li>
+						<a href="javascript:;" id="complete">完成列表</a>
+					</li>
+					<li>
+						<a href="javascript:;" id="noComplete">未完成列表</a>
+					</li>
+				</ul>
+				<!-- Hidden if no completed items are left ↓ -->
+				<button class="clear-completed" id="clear">清空列表</button>
+			</footer>
+		</section>
+		<script type="text/html" id="taskTpl">
+			{{each params}}
+			<li class="{{$value.completed == true ? 'completed' : ''}}" >
+				<div class="view">
+					<input class="toggle" type="checkbox" {{$value.completed == true ? 'checked' : ''}}>
+					<label>{{$value.title}}</label>
+					<button class="destroy"  id="{{$value._id}}"></button>
+				</div>
+				<input class="edit" value="Rule the web">
+			</li>
+			{{/each}}
+		</script>
+		<script type="text/javascript">
+			//0.遍历显示当前任务
+			let taskParams = []; //储存task数据
+
+			//1.显示ajax请求的进度条 nprogress 需要引入 css和js 文件
+			$(document).on('ajaxStart',function () { //发送开始
+				NProgress.start();
+			});
+			$(document).on('ajaxComplete',function () { //发送完成
+				NProgress.done();
+			})
+
+			//获取当前任务
+			reAjax();
+			
+			//2.添加任务
+			$('#todoAdd').on('keyup',function(event){
+				let addValue = $('#todoAdd').prop('value');
+				if (event.keyCode == 13) {
+					if (addValue.trim() == '') {
+						alert('请输入内容');
+						return false;
+					} 
+					$.ajax({
+						url: 'http://127.0.0.1/todo/add',
+						type: 'post',
+						contentType: 'application/json',
+						data: JSON.stringify({
+							title: addValue 
+						}),
+						success: function (data) {
+							taskParams.push(data);
+							tpl();
+							$('#todoAdd').val('');
+						}
+					})
+				}
+			});
+
+			//3.封装重复代码  页面显示模板
+			function tpl() {
+				let html = template('taskTpl', {
+					params: taskParams
+				});
+				$('#todo-list').html(html);
+				counts();
+			};
+
+			//封装刷新页面
+			function reAjax() {
+				$.ajax({
+							url: 'http://127.0.0.1/todo/task',
+							type: 'get',
+							success: function(data) {
+								taskParams = data;
+								tpl();
+								counts();
+							}
+						});
+			}
+			
+			//4.删除当前选中任务
+			$('#todo-list').on('click','.destroy',function () {
+				let id = $(this).prop('id');
+				$.ajax({
+					url: 'http://127.0.0.1/todo/remove',
+					data: {
+						_id: id
+					},
+					success: function (data) {
+						let task = taskParams.findIndex(item => { //查询当前数组对应的索引
+							return item._id == data._id;
+						});
+						taskParams.splice(task,1); //删除数组对应的索引
+						tpl(); //刷新页面
+					}
+				})
+			})
+		
+			//5.点击选中 checked
+			$('#todo-list').on('change','.toggle',function(){
+				//当复选框被选中
+				let status = $(this).is(':checked');
+				let id = $(this).siblings('.destroy').prop('id');
+				$.ajax({
+					url: 'http://127.0.0.1/todo/checked',
+					type: 'post',
+					contentType: 'application/json',
+					data: JSON.stringify({_id: id,completed: status}),
+					success: function(data) {
+						let task = taskParams.find(item => { //查询当前数组中的对象，找到了返回当前对象
+							return item._id == id;
+						} );
+						task.completed = data.completed;//把返回的当前对象的completed变为服务器返回的对应值
+						tpl();
+					}
+				})
+			});
+
+			//6.双击修改任务名称
+			$('#todo-list').on('dblclick','label',function () {
+				$(this).parent().parent('li').addClass('editing'); //给当前li添加类名 编辑
+				$(this).parent().siblings('.edit').val($(this).text()); //把当前文本框的值传给编辑框
+				$(this).parent().siblings('.edit').focus(); //获取焦点
+			});
+			//失去焦点时
+			$('#todo-list').on('blur','.edit',function () {
+				let title = $(this).prop('value'); //获取input编辑栏的文本值
+				let id = $(this).siblings().children('.destroy').prop('id'); //获取li的id值
+				$.ajax({
+					url: 'http://127.0.0.1/todo/edit',
+					type: 'post',
+					contentType: 'application/json',
+					data: JSON.stringify({title: title,_id: id}),
+					success: function(data) {
+						let task = taskParams.find(item => {
+							return item._id == id;
+						});
+						task.title = data.title;
+						tpl();
+					}
+				});
+				$(this).parent('li').removeClass('editing');
+			});
+			//回车键弹起时
+			$('#todo-list').on('keyup','.edit',function (event) {
+				if (event.keyCode != 13) {
+					return false;
+				}
+				let title = $(this).prop('value'); //获取input编辑栏的文本值
+				let id = $(this).siblings().children('.destroy').prop('id'); //获取li的id值
+				$.ajax({
+					url: 'http://127.0.0.1/todo/edit',
+					type: 'post',
+					contentType: 'application/json',
+					data: JSON.stringify({title: title,_id: id}),
+					success: function(data) {
+						let task = taskParams.find(item => {
+							return item._id == id;
+						});
+						task.title = data.title;
+						tpl();
+					}
+				});
+				$(this).parent('li').removeClass('editing');	
+			})
+			
+			//计算未完成的数量
+			function counts() {
+				let count = 0;
+				let noTask = taskParams.filter(item => { //filter根据传入条件，筛选对应条件的对象，返回筛选后的数组
+					return item.completed == false;
+				});
+				$('#count').text(noTask.length + ' 项');
+			};
+			//计算完成的数量
+			function okcounts() {
+				let count = 0;
+				let noTask = taskParams.filter(item => { //filter根据传入条件，筛选对应条件的对象，返回筛选后的数组
+					return item.completed == true;
+				});
+				$('#count').text(noTask.length + ' 项');
+			}
+
+			//本地显示封装
+			function loadTask(newTask) {
+				let html = template('taskTpl', {
+					params: newTask
+				});
+				$('#todo-list').html(html);
+				counts();
+			};
+
+			//显示完成的任务
+			$('#complete').on('click',function() {
+				$(this).parent().siblings().find('a').removeClass('selected');
+				$(this).addClass('selected');
+				let newTask = taskParams.filter(item => {
+					return item.completed == true;
+				});
+				loadTask(newTask);
+				okcounts();
+			});
+
+			//显示未完成的任务
+			$('#noComplete').on('click',function() {
+				$(this).parent().siblings().find('a').removeClass('selected');
+				$(this).addClass('selected');
+				let newTask = taskParams.filter(item => {
+					return item.completed == false;
+				});
+				loadTask(newTask);
+				counts();
+			});
+
+			//显示全部任务
+			$('#all').on('click',function() {
+				$(this).parent().siblings().find('a').removeClass('selected');
+				$(this).addClass('selected');
+				tpl();
+			});
+
+			//清空列表
+			$('#clear').on('click',function () {
+				$.ajax({
+					url: 'http://127.0.0.1/todo/clear',
+					type: 'post',
+					success: function(data) {
+						console.log(data);
+					}
+				});
+				reAjax();
+			})
+		</script>
+	</body>
+</html>
